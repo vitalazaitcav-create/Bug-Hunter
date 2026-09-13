@@ -1,0 +1,29 @@
+--- a/skymp5-server/cpp/mp_common/Networking.cpp
++++ b/skymp5-server/cpp/mp_common/Networking.cpp
+@@ -191,11 +191,16 @@
+       try {
+         Networking::HandlePacketServerside(onPacket, state, packet,
+                                            *this->idManager);
+       } catch (PublicError& e) {
+         // TODO: Send PublicError to related client
+         throw;
+       } catch (std::exception& e) {
+-        throw;
++        // A single malformed packet must not abort the receive loop nor
++        // kill the tick: log it and continue with the next packet.
++        // (Previously rethrown, which let one crafted packet interrupt
++        // processing of all other users' packets for this tick and, in
++        // combination with ScampServer::Tick retry loop, amplify DoS.)
++        fprintf(stderr,
++                "[Networking] dropped malformed packet: %s\n", e.what());
++        continue;
+       }
+     }
+ 
+Примечание: <cstdio> уже транзитивно доступен (Networking.cpp использует
+stdio через зависимости); при необходимости добавить #include <cstdio>.
+
+Этот дифф — defense-in-depth к основному фиксу
+(BitStreamInputArchive.patched.h). Основной фикс закрывает причину
+(unbounded deserialization loop), этот — снижаетblast radius любых будущих
+парсерных багов: битый пакет больше не рвёт приёмный цикл.
